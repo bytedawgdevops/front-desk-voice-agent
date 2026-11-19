@@ -45,13 +45,20 @@ def _normalise(query: str) -> str:
 # find_centre
 # ---------------------------------------------------------------------------
 
-def find_centre(query: str) -> dict:
+def find_centre(query: str, purpose: str | None = None) -> dict:
     """
     Search for centres by name or suburb.
 
     Call this first whenever the caller mentions a location or centre name —
     it resolves the centre_id required by get_opening_hours and
     get_program_info.
+
+    Pass purpose to filter out irrelevant centre types:
+      'hours'    – caller is asking about opening times; excludes head_office
+      'programs' – caller is asking about swim lessons, OSHC or gymnastics;
+                   excludes head_office
+      'contact'  – caller wants a phone number or address; includes all types
+      omitted    – includes all types
 
     The query is normalised before searching: 'and' is treated as '&',
     common filler words (the, one, at, in) are stripped, and whitespace is
@@ -68,18 +75,33 @@ def find_centre(query: str) -> dict:
     If more than one centre is returned, ask the caller to confirm which one.
     """
     term = f'%{_normalise(query)}%'
+    exclude_head_office = purpose in ('hours', 'programs')
+
     with db.connection() as con:
         # Fetch one extra row to detect truncation without a second COUNT query.
-        rows = con.execute(
-            '''
-            SELECT id, name, type, suburb, address, phone
-            FROM   centres
-            WHERE  name LIKE ? OR suburb LIKE ?
-            ORDER  BY name
-            LIMIT  ?
-            ''',
-            (term, term, _FIND_LIMIT + 1),
-        ).fetchall()
+        if exclude_head_office:
+            rows = con.execute(
+                '''
+                SELECT id, name, type, suburb, address, phone
+                FROM   centres
+                WHERE  (name LIKE ? OR suburb LIKE ?)
+                  AND  type != 'head_office'
+                ORDER  BY name
+                LIMIT  ?
+                ''',
+                (term, term, _FIND_LIMIT + 1),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                '''
+                SELECT id, name, type, suburb, address, phone
+                FROM   centres
+                WHERE  name LIKE ? OR suburb LIKE ?
+                ORDER  BY name
+                LIMIT  ?
+                ''',
+                (term, term, _FIND_LIMIT + 1),
+            ).fetchall()
 
     truncated = len(rows) > _FIND_LIMIT
     return {

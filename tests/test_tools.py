@@ -209,6 +209,23 @@ def test_take_message_saves_and_returns_id(_db_path):
 # SQL injection
 # ---------------------------------------------------------------------------
 
+def test_find_centre_purpose_hours_excludes_head_office():
+    # When the caller asks about hours, the head office (no pool, no gym)
+    # must be absent even though it shares the Muralong suburb.
+    result = find_centre('Muralong', purpose='hours')
+    types = [c['type'] for c in result['centres']]
+    assert 'head_office' not in types
+    assert len(result['centres']) >= 1
+
+
+def test_find_centre_purpose_contact_includes_head_office():
+    # When the caller wants a phone number or address, the head office
+    # is a valid result and must be included.
+    result = find_centre('Muralong', purpose='contact')
+    types = [c['type'] for c in result['centres']]
+    assert 'head_office' in types
+
+
 def test_sql_injection_find_centre(_db_path):
     # A parameterised query must treat this as a literal string, not SQL.
     result = find_centre("'; DROP TABLE centres;--")
