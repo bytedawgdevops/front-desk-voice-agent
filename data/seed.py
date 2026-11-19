@@ -88,19 +88,21 @@ def _insert_centres(cur: sqlite3.Cursor) -> None:
              '88 Yalandra Street, Kapperby SA 5097',            '08 8276 3300'),
 
         # OSHC centres (co-located with schools)
-        (7,  'Kestrel OSHC – Nuriarra Primary',
+        # Plain hyphens throughout: these names are spoken by TTS and matched
+        # against speech transcripts — en-dashes nobody says are a liability.
+        (7,  'Kestrel OSHC - Nuriarra Primary',
              'oshc', 'Nuriarra',
              'c/- Nuriarra Primary School, 15 Nurrilla Road, Nuriarra SA 5125',
                                                                 '08 8321 7701'),
-        (8,  'Kestrel OSHC – Wardala Community School',
+        (8,  'Kestrel OSHC - Wardala Community School',
              'oshc', 'Wardala',
              'c/- Wardala Community School, 42 Kapperby Road, Wardala SA 5162',
                                                                 '08 8347 7702'),
-        (9,  'Kestrel OSHC – Mintaro East Primary',
+        (9,  'Kestrel OSHC - Mintaro East Primary',
              'oshc', 'Mintaro East',
              'c/- Mintaro East Primary School, 8 Yalandra Crescent, Mintaro East SA 5119',
                                                                 '08 8412 7703'),
-        (10, 'Kestrel OSHC – Vendarah South Primary',
+        (10, 'Kestrel OSHC - Vendarah South Primary',
              'oshc', 'Vendarah South',
              'c/- Vendarah South Primary School, 29 Karrawilla Avenue, Vendarah South SA 5113',
                                                                 '08 8358 7704'),
@@ -111,9 +113,16 @@ def _insert_centres(cur: sqlite3.Cursor) -> None:
              '3 Stirling Place, Halcyon Park SA 5088',          '08 8392 5500'),
 
         # Head office
-        (12, 'Kestrel Community Recreation – Head Office',
+        (12, 'Kestrel Community Recreation - Head Office',
              'head_office', 'Muralong',
              'Level 2, 180 Mundarra Road, Muralong SA 5126',    '08 8300 0000'),
+
+        # Second Muralong centre — deliberately confusable name so that
+        # find_centre('Muralong') returns two results and the agent must ask
+        # the caller to confirm which one they mean.
+        (13, 'Muralong Park Aquatic Centre',
+             'recreation_aquatic', 'Muralong',
+             '12 Nurrilla Avenue, Muralong SA 5126',            '08 8321 5500'),
     ]
     cur.executemany(
         'INSERT INTO centres (id, name, type, suburb, address, phone) VALUES (?,?,?,?,?,?)',
@@ -139,7 +148,7 @@ def _insert_facilities_and_hours(cur: sqlite3.Cursor) -> None:
         ( 5, 2, 'Indoor Pool',          None, None),
         ( 6, 2, 'Gymnasium',            None, None),
         ( 7, 2, 'Group Fitness Studio', None, None),
-        ( 8, 2, 'Crèche',          None, None),
+        ( 8, 2, 'Creche',           None, None),
 
         # Vendarah Aquatic Centre (3)
         ( 9, 3, 'Indoor Pool',          None, None),
@@ -159,19 +168,19 @@ def _insert_facilities_and_hours(cur: sqlite3.Cursor) -> None:
         (17, 6, 'Gymnasium',            None, None),
         (18, 6, 'Group Fitness Studio', None, None),
 
-        # OSHC – Nuriarra Primary (7)
+        # OSHC - Nuriarra Primary (7)
         (19, 7, 'Before School Care',   None, None),
         (20, 7, 'After School Care',    None, None),
 
-        # OSHC – Wardala Community School (8)
+        # OSHC - Wardala Community School (8)
         (21, 8, 'Before School Care',   None, None),
         (22, 8, 'After School Care',    None, None),
 
-        # OSHC – Mintaro East Primary (9)
+        # OSHC - Mintaro East Primary (9)
         (23, 9, 'Before School Care',   None, None),
         (24, 9, 'After School Care',    None, None),
 
-        # OSHC – Vendarah South Primary (10)
+        # OSHC - Vendarah South Primary (10)
         (25, 10, 'Before School Care',  None, None),
         (26, 10, 'After School Care',   None, None),
 
@@ -180,6 +189,9 @@ def _insert_facilities_and_hours(cur: sqlite3.Cursor) -> None:
 
         # Head Office (12)
         (28, 12, 'Administration',      None, None),
+
+        # Muralong Park Aquatic Centre (13)
+        (29, 13, 'Indoor Pool',         None, None),
     ]
     cur.executemany(
         'INSERT INTO facilities (id, centre_id, name, closure_month_start, closure_month_end)'
@@ -208,8 +220,8 @@ def _insert_facilities_and_hours(cur: sqlite3.Cursor) -> None:
 
     hours: list = []
 
-    # Indoor pools: 1, 5, 9, 11, 14, 16
-    for fid in (1, 5, 9, 11, 14, 16):
+    # Indoor pools: 1, 5, 9, 11, 14, 16, 29
+    for fid in (1, 5, 9, 11, 14, 16, 29):
         hours += _hrs(fid, _POOL_WD, _POOL_SAT, _POOL_SUN)
 
     # Outdoor pools: 2, 10 — facility row stores the seasonal closure window
@@ -319,8 +331,8 @@ def _insert_programs(cur: sqlite3.Cursor) -> None:
     #  description, next_intake, day_of_week, start_time, duration_minutes)
     rows = []
 
-    # Swim lessons at all six aquatic/recreation centres
-    for c_id in range(1, 7):
+    # Swim lessons at all aquatic/recreation centres (1-6 and 13)
+    for c_id in list(range(1, 7)) + [13]:
         rows += [
             (c_id, 'Preschool Splash',
              'swim_lessons', 3,  5,  22.0, _preschool_desc,
