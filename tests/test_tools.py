@@ -54,33 +54,61 @@ def _use_test_db(_db_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_find_centre_by_name():
-    results = find_centre('Vendarah Aquatic')
-    assert len(results) == 1
-    c = results[0]
+    result = find_centre('Vendarah Aquatic')
+    assert result['truncated'] is False
+    centres = result['centres']
+    assert len(centres) == 1
+    c = centres[0]
     assert c['name'] == 'Vendarah Aquatic Centre'
     assert c['suburb'] == 'Vendarah'
     assert c['phone'] == '08 8412 8800'
 
 
 def test_find_centre_by_suburb():
-    results = find_centre('Kapperby')
-    assert len(results) >= 1
-    # Every result must mention Kapperby in its name or suburb
-    assert all('Kapperby' in c['name'] or c['suburb'] == 'Kapperby' for c in results)
+    result = find_centre('Kapperby')
+    centres = result['centres']
+    assert len(centres) >= 1
+    assert all('Kapperby' in c['name'] or c['suburb'] == 'Kapperby' for c in centres)
 
 
 def test_find_centre_ambiguous():
     # 'Muralong' matches two recreation/aquatic centres plus the head office
     # in the same suburb, so the agent must ask the caller to confirm.
-    results = find_centre('Muralong')
-    names = [c['name'] for c in results]
-    assert len(results) >= 2, 'expected multiple matches to force disambiguation'
+    result = find_centre('Muralong')
+    centres = result['centres']
+    names = [c['name'] for c in centres]
+    assert len(centres) >= 2, 'expected multiple matches to force disambiguation'
     assert any('Muralong Aquatic' in n for n in names)
     assert any('Muralong Park' in n for n in names)
 
 
 def test_find_centre_unknown_returns_empty():
-    assert find_centre('xyzqwerty99') == []
+    result = find_centre('xyzqwerty99')
+    assert result['centres'] == []
+    assert result['truncated'] is False
+
+
+def test_find_centre_truncated():
+    # 'a' appears in every centre name or suburb (13 centres); LIMIT 5 should
+    # cap the list and set truncated so the model asks the caller to narrow down.
+    result = find_centre('a')
+    assert len(result['centres']) == 5
+    assert result['truncated'] is True
+
+
+def test_find_centre_normalises_and_to_ampersand():
+    # The database stores '&'; a caller will say 'and'.  Normalisation must
+    # make these equivalent before the LIKE query runs.
+    result = find_centre('Muralong Aquatic and Recreation')
+    names = [c['name'] for c in result['centres']]
+    assert any('Muralong Aquatic' in n for n in names)
+
+
+def test_find_centre_strips_filler_words():
+    # 'the one at Muralong' should reduce to 'Muralong' after normalisation
+    # and return at least the two Muralong aquatic centres.
+    result = find_centre('the one at Muralong')
+    assert len(result['centres']) >= 2
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +212,7 @@ def test_take_message_saves_and_returns_id(_db_path):
 def test_sql_injection_find_centre(_db_path):
     # A parameterised query must treat this as a literal string, not SQL.
     result = find_centre("'; DROP TABLE centres;--")
-    assert result == []
+    assert result['centres'] == []
 
     # The centres table must still exist and be fully intact
     con = sqlite3.connect(_db_path)

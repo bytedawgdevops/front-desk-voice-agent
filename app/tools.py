@@ -7,6 +7,7 @@ none of them raise for the not-found case, because the model needs to be told
 """
 
 import datetime
+import re
 
 from app import db
 
@@ -21,33 +22,70 @@ _WEEKDAY_NAMES = {
     4: 'Friday', 5: 'Saturday', 6: 'Sunday',
 }
 
+# Filler words a caller might say that add no search value.
+_FILLER = re.compile(r'\b(the|one|at|in)\b', re.IGNORECASE)
+
+_FIND_LIMIT = 5
+
+
+def _normalise(query: str) -> str:
+    """
+    Prepare a caller's query for LIKE matching.
+
+    - 'and' → '&'  so "Muralong Aquatic and Recreation" hits the DB value
+    - strips filler words: the, one, at, in
+    - collapses whitespace
+    """
+    q = re.sub(r'\band\b', '&', query, flags=re.IGNORECASE)
+    q = _FILLER.sub('', q)
+    return ' '.join(q.split())
+
 
 # ---------------------------------------------------------------------------
 # find_centre
 # ---------------------------------------------------------------------------
 
-def find_centre(query: str) -> list[dict]:
+def find_centre(query: str) -> dict:
     """
     Search for centres by name or suburb.
 
     Call this first whenever the caller mentions a location or centre name —
     it resolves the centre_id required by get_opening_hours and
-    get_program_info.  If more than one result is returned, ask the caller
-    to confirm which centre they mean before proceeding.  An empty list means
-    no centre matched; offer to take a message.
+    get_program_info.
+
+    The query is normalised before searching: 'and' is treated as '&',
+    common filler words (the, one, at, in) are stripped, and whitespace is
+    collapsed.  This means "the one at Muralong" and "Muralong Aquatic and
+    Recreation" both resolve correctly.
+
+    Returns a dict:
+      centres   – up to 5 matching centres (id, name, type, suburb,
+                  address, phone)
+      truncated – True when more than 5 centres matched; ask the caller to
+                  be more specific before proceeding.
+
+    If centres is empty, nothing matched; offer to take a message.
+    If more than one centre is returned, ask the caller to confirm which one.
     """
-    term = f'%{query}%'
+    term = f'%{_normalise(query)}%'
     with db.connection() as con:
+        # Fetch one extra row to detect truncation without a second COUNT query.
         rows = con.execute(
             '''
             SELECT id, name, type, suburb, address, phone
             FROM   centres
             WHERE  name LIKE ? OR suburb LIKE ?
             ORDER  BY name
+            LIMIT  ?
             ''',
-            (term, term),
+            (term, term, _FIND_LIMIT + 1),
         ).fetchall()
-    return [dict(r) for r in rows]
+
+    truncated = len(rows) > _FIND_LIMIT
+    return {
+        'centres':   [dict(r) for r in rows[:_FIND_LIMIT]],
+        'truncated': truncated,
+    }
 
 
 # ---------------------------------------------------------------------------
