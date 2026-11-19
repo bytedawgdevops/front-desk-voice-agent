@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python -m data.seed)",
+      "Bash(.venv/Scripts/python -c \"import sqlite3; [print\\(r\\) for r in sqlite3.connect\\('data/frontdesk.db'\\).execute\\(\\\\\"SELECT c.name, f.name, h.day_of_week, h.open_time, h.close_time FROM facility_hours h JOIN facilities f ON f.id=h.facility_id JOIN centres c ON c.id=f.centre_id WHERE c.name LIKE '%Muralong%'\\\\\"\\)]\")"
+    ]
+  }
+}
