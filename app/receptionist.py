@@ -6,13 +6,17 @@ send→execute→return cycle, and returns TurnResult to the caller.
 """
 
 import json
+import logging
 import pathlib
 from dataclasses import dataclass, field
 
 import anthropic
 
+import app.db as _db
 import app.tools as _tools
 from app.config import ANTHROPIC_API_KEY, ANTHROPIC_MODEL
+
+logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = (
     pathlib.Path(__file__).parent / 'prompts' / 'system.md'
@@ -204,13 +208,7 @@ class TurnResult:
     escalated:    bool      = False
 
 
-def reply(session_id: str, conversations: dict, user_text: str) -> TurnResult:
-    """
-    Advance the conversation by one user turn.
-
-    conversations is a plain dict keyed by session_id — the caller owns it
-    and passes it in each time, so this module holds no global state.
-    """
+def _run_turn(session_id: str, conversations: dict, user_text: str) -> TurnResult:
     history = conversations.setdefault(session_id, [])
     history.append({'role': 'user', 'content': user_text})
 
@@ -225,7 +223,6 @@ def reply(session_id: str, conversations: dict, user_text: str) -> TurnResult:
             messages=history,
         )
 
-        # Append the assistant turn to the running history.
         history.append({'role': 'assistant', 'content': response.content})
 
         if response.stop_reason == 'end_turn':
@@ -236,14 +233,12 @@ def reply(session_id: str, conversations: dict, user_text: str) -> TurnResult:
             return TurnResult(reply=text, tools_called=tools_called)
 
         if response.stop_reason != 'tool_use':
-            # Unexpected stop — return whatever text there is.
             text = next(
                 (b.text for b in response.content if hasattr(b, 'text')),
                 '',
             )
             return TurnResult(reply=text, tools_called=tools_called)
 
-        # Execute every requested tool and collect results.
         tool_results = []
         escalated = False
 
@@ -273,5 +268,16 @@ def reply(session_id: str, conversations: dict, user_text: str) -> TurnResult:
                 escalated=True,
             )
 
-    # Reached the tool cap without a plain-text reply.
     return TurnResult(reply=_OVERFLOW_REPLY, tools_called=tools_called)
+
+
+def reply(session_id: str, conversations: dict, user_text: str) -> TurnResult:
+    """
+    Advance the conversation by one user turn and log it to call_log.
+
+    conversations is a plain dict keyed by session_id — the caller owns it
+    and passes it in each time, so this module holds no global state.
+    """
+    result = _run_turn(session_id, conversations, user_text)
+    _db.log_turn(session_id, user_text, result.reply, result.tools_called, result.escalated)
+    return result

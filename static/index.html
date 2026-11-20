@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kestrel Community Recreation — Front Desk</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f0f4f8;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      color: #1a3a5c;
+    }
+
+    header p {
+      font-size: 0.9rem;
+      color: #555;
+      margin-top: 0.3rem;
+    }
+
+    #conversation {
+      width: 100%;
+      max-width: 640px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-bottom: 2rem;
+      min-height: 100px;
+    }
+
+    .bubble {
+      max-width: 80%;
+      padding: 0.75rem 1rem;
+      border-radius: 1rem;
+      line-height: 1.5;
+      font-size: 0.95rem;
+    }
+
+    .bubble.user {
+      align-self: flex-end;
+      background: #1a3a5c;
+      color: #fff;
+      border-bottom-right-radius: 0.25rem;
+    }
+
+    .bubble.agent {
+      align-self: flex-start;
+      background: #fff;
+      color: #1a1a1a;
+      border-bottom-left-radius: 0.25rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .bubble.agent.escalated {
+      border-left: 4px solid #c0392b;
+    }
+
+    #status {
+      font-size: 0.85rem;
+      color: #777;
+      text-align: center;
+      min-height: 1.2em;
+      margin-bottom: 1.5rem;
+    }
+
+    #talk-btn {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      border: none;
+      background: #1a3a5c;
+      color: #fff;
+      font-size: 2rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      transition: background 0.15s, transform 0.1s;
+      user-select: none;
+    }
+
+    #talk-btn:hover  { background: #24527a; }
+    #talk-btn.active { background: #c0392b; transform: scale(1.08); }
+    #talk-btn:disabled { background: #aaa; cursor: default; transform: none; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Kestrel Community Recreation</h1>
+  <p>Automated front desk &mdash; press and hold to speak</p>
+</header>
+
+<div id="conversation"></div>
+<div id="status">Press the button to speak</div>
+<button id="talk-btn" aria-label="Press and hold to speak">🎙</button>
+
+<script>
+  const btn          = document.getElementById('talk-btn');
+  const statusEl     = document.getElementById('status');
+  const conversation = document.getElementById('conversation');
+
+  const conversationId = crypto.randomUUID();
+
+  // ── Speech recognition ──────────────────────────────────────────────────
+  const SpeechRecognition =
+    window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  let recognition = null;
+  let recognising = false;
+
+  if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    recognition.lang = 'en-AU';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript.trim();
+      if (transcript) sendTurn(transcript);
+    };
+
+    recognition.onerror = (event) => {
+      setStatus('Could not hear you — try again.');
+      setListening(false);
+    };
+
+    recognition.onend = () => setListening(false);
+  } else {
+    btn.disabled = true;
+    setStatus('Speech recognition is not supported in this browser. Try Chrome or Edge.');
+  }
+
+  // ── Button events ────────────────────────────────────────────────────────
+  btn.addEventListener('mousedown',  startListening);
+  btn.addEventListener('touchstart', (e) => { e.preventDefault(); startListening(); });
+  btn.addEventListener('mouseup',    stopListening);
+  btn.addEventListener('mouseleave', stopListening);
+  btn.addEventListener('touchend',   stopListening);
+
+  function startListening() {
+    if (!recognition || recognising || btn.disabled) return;
+    recognition.start();
+    setListening(true);
+    setStatus('Listening…');
+  }
+
+  function stopListening() {
+    if (!recognition || !recognising) return;
+    recognition.stop();
+  }
+
+  function setListening(active) {
+    recognising = active;
+    btn.classList.toggle('active', active);
+  }
+
+  // ── API call ─────────────────────────────────────────────────────────────
+  async function sendTurn(text) {
+    addBubble(text, 'user');
+    btn.disabled = true;
+    setStatus('Thinking…');
+
+    let data;
+    try {
+      const res = await fetch('/api/turn', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ conversation_id: conversationId, text }),
+      });
+      data = await res.json();
+    } catch (err) {
+      setStatus('Network error — please try again.');
+      btn.disabled = false;
+      return;
+    }
+
+    addBubble(data.reply, 'agent', data.escalated);
+    setStatus(data.escalated ? 'Call transferred to staff.' : 'Press the button to speak');
+
+    if (data.audio_url) {
+      playAudio(data.audio_url, () => { if (!data.escalated) btn.disabled = false; });
+    } else {
+      speakFallback(data.reply, () => { if (!data.escalated) btn.disabled = false; });
+    }
+
+    if (data.escalated) btn.disabled = true;
+  }
+
+  // ── Audio playback ───────────────────────────────────────────────────────
+  function playAudio(url, onDone) {
+    const audio = new Audio(url);
+    audio.onended  = onDone;
+    audio.onerror  = () => speakFallback(null, onDone);
+    audio.play().catch(() => speakFallback(null, onDone));
+  }
+
+  function speakFallback(text, onDone) {
+    if (!text || !window.speechSynthesis) { onDone(); return; }
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.lang   = 'en-AU';
+    utt.onend  = onDone;
+    utt.onerror = onDone;
+    speechSynthesis.speak(utt);
+  }
+
+  // ── UI helpers ───────────────────────────────────────────────────────────
+  function addBubble(text, role, escalated = false) {
+    const div = document.createElement('div');
+    div.className = `bubble ${role}${escalated ? ' escalated' : ''}`;
+    div.textContent = text;
+    conversation.appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }
+
+  function setStatus(msg) {
+    statusEl.textContent = msg;
+  }
+</script>
+
+</body>
+</html>
