@@ -8,115 +8,128 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: system-ui, sans-serif;
-      font-size: 0.9rem;
-      background: #f0f4f8;
-      color: #1a1a1a;
-      padding: 2rem 1.5rem;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      background: #f5f7fa;
+      color: #1c1c1e;
+      padding: 40px 48px;
     }
 
-    h1 {
-      font-size: 1.3rem;
+    /* ── Page header ── */
+    .page-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 40px;
+      border-bottom: 2px solid #1a3a5c;
+      padding-bottom: 16px;
+    }
+
+    .page-header h1 {
+      font-size: 20px;
+      font-weight: 700;
       color: #1a3a5c;
-      margin-bottom: 0.25rem;
+      letter-spacing: -0.3px;
     }
 
-    .subtitle {
-      color: #666;
-      font-size: 0.8rem;
-      margin-bottom: 2.5rem;
+    .page-header .meta {
+      font-size: 12px;
+      color: #888;
     }
 
-    section {
-      margin-bottom: 3rem;
-    }
+    /* ── Section ── */
+    section { margin-bottom: 48px; }
 
-    h2 {
-      font-size: 1rem;
+    section h2 {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
       color: #1a3a5c;
-      margin-bottom: 0.75rem;
-      border-bottom: 2px solid #d0dcea;
-      padding-bottom: 0.4rem;
+      margin-bottom: 10px;
     }
 
-    .table-wrap {
-      overflow-x: auto;
-    }
+    /* ── Table ── */
+    .table-wrap { overflow-x: auto; }
 
     table {
       width: 100%;
       border-collapse: collapse;
       background: #fff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      border: 1px solid #dde3ec;
+      border-radius: 6px;
+      overflow: hidden;
     }
 
-    th {
+    thead th {
       background: #1a3a5c;
       color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 10px 14px;
       text-align: left;
-      padding: 0.55rem 0.75rem;
+      white-space: nowrap;
+    }
+
+    tbody tr { border-bottom: 1px solid #edf0f5; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:nth-child(even) td { background: #fafbfd; }
+    tbody tr:hover td { background: #f0f4f9; }
+
+    td {
+      padding: 10px 14px;
+      vertical-align: top;
+    }
+
+    .num   { font-variant-numeric: tabular-nums; }
+    .mono  { font-family: ui-monospace, monospace; font-size: 12px; color: #555; }
+    .dim   { color: #888; }
+    .wrap  { max-width: 340px; }
+    .nowrap { white-space: nowrap; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
       font-weight: 600;
       white-space: nowrap;
     }
 
-    td {
-      padding: 0.5rem 0.75rem;
-      border-bottom: 1px solid #e8edf3;
-      vertical-align: top;
+    .badge-esc  { background: #fde8e8; color: #991b1b; }
+    .badge-tool { background: #e8f0fe; color: #1a3a5c; font-family: ui-monospace, monospace; font-size: 11px; }
+
+    .empty td {
+      color: #aaa;
+      font-style: italic;
+      text-align: center;
+      padding: 24px;
     }
-
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: #f5f8fb; }
-
-    .pill {
-      display: inline-block;
-      padding: 0.15rem 0.5rem;
-      border-radius: 1rem;
-      font-size: 0.75rem;
-      font-weight: 600;
-    }
-
-    .pill-yes  { background: #d4edda; color: #155724; }
-    .pill-no   { background: #f8d7da; color: #721c24; }
-    .pill-esc  { background: #f8d7da; color: #721c24; }
-
-    .mono { font-family: monospace; font-size: 0.8rem; color: #555; }
-
-    .empty { color: #999; font-style: italic; padding: 1rem 0.75rem; }
-
-    #refresh-btn {
-      float: right;
-      margin-top: -0.1rem;
-      padding: 0.3rem 0.8rem;
-      background: #1a3a5c;
-      color: #fff;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 0.8rem;
-    }
-
-    #refresh-btn:hover { background: #24527a; }
-    #last-updated { color: #999; font-size: 0.75rem; margin-top: 0.25rem; }
   </style>
 </head>
 <body>
 
-<h1>Kestrel Front Desk — Admin</h1>
-<p class="subtitle">
-  <button id="refresh-btn" onclick="loadAll()">Refresh</button>
-  <span id="last-updated"></span>
-</p>
+<div class="page-header">
+  <h1>Kestrel Community Recreation &mdash; Front Desk Admin</h1>
+  <span class="meta" id="ts"></span>
+</div>
 
 <section>
   <h2>Messages taken</h2>
   <div class="table-wrap">
     <table id="tbl-messages">
       <thead><tr>
-        <th>#</th><th>Received</th><th>Name</th><th>Phone</th>
-        <th>Centre</th><th>Topic</th><th>Message</th><th>Delivered</th>
+        <th>Ref</th>
+        <th>Received</th>
+        <th>Caller</th>
+        <th>Callback</th>
+        <th>Centre</th>
+        <th>Topic</th>
       </tr></thead>
-      <tbody><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+      <tbody><tr class="empty"><td colspan="6">Loading&hellip;</td></tr></tbody>
     </table>
   </div>
 </section>
@@ -124,12 +137,15 @@
 <section>
   <h2>Recent conversations</h2>
   <div class="table-wrap">
-    <table id="tbl-conversations">
+    <table id="tbl-conv">
       <thead><tr>
-        <th>Time</th><th>Session</th><th>Turn</th>
-        <th>Caller said</th><th>Agent replied</th><th>Tools</th><th>Escalated</th>
+        <th>Time</th>
+        <th>Caller said</th>
+        <th>Agent replied</th>
+        <th>Tools</th>
+        <th>Escalated</th>
       </tr></thead>
-      <tbody><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+      <tbody><tr class="empty"><td colspan="5">Loading&hellip;</td></tr></tbody>
     </table>
   </div>
 </section>
@@ -138,104 +154,109 @@
   <h2>Topics by frequency</h2>
   <div class="table-wrap">
     <table id="tbl-topics">
-      <thead><tr><th>Topic</th><th>Count</th></tr></thead>
-      <tbody><tr><td colspan="2" class="empty">Loading…</td></tr></tbody>
+      <thead><tr>
+        <th>Topic</th>
+        <th style="width:80px">Count</th>
+      </tr></thead>
+      <tbody><tr class="empty"><td colspan="2">Loading&hellip;</td></tr></tbody>
     </table>
   </div>
 </section>
 
 <script>
+  /* ── Formatting helpers ── */
   function fmt(iso) {
     if (!iso) return '—';
     const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
-    return d.toLocaleString('en-AU', { dateStyle: 'short', timeStyle: 'short' });
+    return d.toLocaleString('en-AU', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    });
   }
 
-  function pill(yes) {
-    return yes
-      ? '<span class="pill pill-yes">Yes</span>'
-      : '<span class="pill pill-no">No</span>';
+  function esc(s) {
+    if (s == null) return '<span class="dim">—</span>';
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  function truncate(s, n) {
-    if (!s) return '—';
+  function clip(s, n) {
+    if (!s) return '';
     return s.length > n ? s.slice(0, n) + '…' : s;
   }
 
+  /* ── Fetch + render ── */
   async function load(url, render) {
     try {
-      const res = await fetch(url);
-      render(await res.json());
+      const r = await fetch(url);
+      render(await r.json());
     } catch (e) {
       console.error(url, e);
     }
   }
 
   function renderMessages(rows) {
-    const tbody = document.querySelector('#tbl-messages tbody');
-    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">No messages yet.</td></tr>'; return; }
-    tbody.innerHTML = rows.map(r => `<tr>
-      <td>${r.id}</td>
-      <td class="mono">${fmt(r.created_at)}</td>
+    const tb = document.querySelector('#tbl-messages tbody');
+    if (!rows.length) {
+      tb.innerHTML = '<tr class="empty"><td colspan="6">No messages yet.</td></tr>';
+      return;
+    }
+    tb.innerHTML = rows.map(r => `<tr>
+      <td class="num dim">${r.id}</td>
+      <td class="mono nowrap">${fmt(r.created_at)}</td>
       <td>${esc(r.name)}</td>
-      <td class="mono">${esc(r.phone)}</td>
+      <td class="mono nowrap">${esc(r.phone)}</td>
       <td>${esc(r.centre)}</td>
       <td>${esc(r.topic)}</td>
-      <td>${esc(truncate(r.message, 80))}</td>
-      <td>${pill(r.delivered)}</td>
     </tr>`).join('');
   }
 
   function renderConversations(rows) {
-    const tbody = document.querySelector('#tbl-conversations tbody');
-    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No conversations yet.</td></tr>'; return; }
-    tbody.innerHTML = rows.map(r => {
+    const tb = document.querySelector('#tbl-conv tbody');
+    if (!rows.length) {
+      tb.innerHTML = '<tr class="empty"><td colspan="5">No conversations yet.</td></tr>';
+      return;
+    }
+    tb.innerHTML = rows.map(r => {
       let escalated = false;
       try { escalated = JSON.parse(r.tool_input || '{}').escalated; } catch (_) {}
-      let tools = '—';
+
+      let tools = '';
       try {
         const t = JSON.parse(r.tools || '[]');
-        tools = t.length ? t.join(', ') : '—';
+        tools = t.map(n => `<span class="badge badge-tool">${esc(n)}</span>`).join(' ');
       } catch (_) {}
+
       return `<tr>
-        <td class="mono">${fmt(r.created_at)}</td>
-        <td class="mono">${esc(r.session_id.slice(0, 8))}…</td>
-        <td>${r.turn}</td>
-        <td>${esc(truncate(r.caller_said, 60))}</td>
-        <td>${esc(truncate(r.agent_replied, 80))}</td>
-        <td class="mono" style="font-size:0.75rem">${esc(tools)}</td>
-        <td>${escalated ? '<span class="pill pill-esc">Yes</span>' : '—'}</td>
+        <td class="mono nowrap">${fmt(r.created_at)}</td>
+        <td class="wrap">${esc(clip(r.caller_said,   100))}</td>
+        <td class="wrap">${esc(clip(r.agent_replied, 120))}</td>
+        <td style="white-space:nowrap">${tools || '<span class="dim">—</span>'}</td>
+        <td>${escalated ? '<span class="badge badge-esc">Yes</span>' : '<span class="dim">—</span>'}</td>
       </tr>`;
     }).join('');
   }
 
   function renderTopics(rows) {
-    const tbody = document.querySelector('#tbl-topics tbody');
-    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="2" class="empty">No messages yet.</td></tr>'; return; }
-    tbody.innerHTML = rows.map(r => `<tr>
+    const tb = document.querySelector('#tbl-topics tbody');
+    if (!rows.length) {
+      tb.innerHTML = '<tr class="empty"><td colspan="2">No messages yet.</td></tr>';
+      return;
+    }
+    tb.innerHTML = rows.map(r => `<tr>
       <td>${esc(r.topic)}</td>
-      <td><strong>${r.count}</strong></td>
+      <td class="num"><strong>${r.count}</strong></td>
     </tr>`).join('');
   }
 
-  function esc(s) {
-    if (s == null) return '—';
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
+  /* ── Boot ── */
+  document.getElementById('ts').textContent =
+    'Loaded ' + new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
 
-  function loadAll() {
-    load('/api/admin/messages',      renderMessages);
-    load('/api/admin/conversations',  renderConversations);
-    load('/api/admin/topics',         renderTopics);
-    document.getElementById('last-updated').textContent =
-      'Last updated ' + new Date().toLocaleTimeString('en-AU');
-  }
-
-  loadAll();
+  load('/api/admin/messages',     renderMessages);
+  load('/api/admin/conversations', renderConversations);
+  load('/api/admin/topics',        renderTopics);
 </script>
 
 </body>
