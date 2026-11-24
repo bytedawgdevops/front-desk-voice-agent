@@ -20,10 +20,8 @@ message when it cannot, and hands anything serious to a person.
 - Anything about a child's safety, an injury, a complaint or a refund goes
   straight to escalate(). No attempt to resolve it.
 - Never discuss an individual child, by name or otherwise. Take a message.
-- SQLite is the source of truth. ElevenLabs and n8n are optional layers:
-  if either fails, the call still works. Fall back to browser speech;
-  log the failed webhook and carry on. A failed delivery never loses a
-  message.
+- SQLite is the source of truth. ElevenLabs is an optional layer: if it
+  fails, the call still works. Fall back to browser speech.
 - Keep the decision logic in one readable module. I have to be able to
   explain every line of it in an interview.
 - Write tests for the tools before wiring up the model.
@@ -43,7 +41,6 @@ in retention.md.
 Python 3.11, FastAPI, SQLite (stdlib sqlite3), pytest, Anthropic SDK.
 Capture: one HTML page, vanilla JavaScript, Web Speech API (Chrome/Edge).
 Voice output: ElevenLabs, Flash/Turbo model, cached to disk by text hash.
-Delivery: n8n via webhook, fired after the database write, never before.
 
 ## Layout
 
@@ -51,7 +48,6 @@ Delivery: n8n via webhook, fired after the database write, never before.
     app/receptionist.py  the conversation loop and tool declarations
     app/tools.py         the five tools, plain Python, no AI
     app/voice.py         ElevenLabs, with fallback to None
-    app/delivery.py      the n8n webhook, fire and forget
     app/db.py            connection and queries
     app/config.py        environment loading, single source
     app/prompts/system.md
