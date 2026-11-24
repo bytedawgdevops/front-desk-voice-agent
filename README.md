@@ -45,7 +45,8 @@ in Muralong on purpose, so the agent has to ask which one the caller means.
 
 Open `http://localhost:8000` in Chrome or Edge. Click the microphone once to
 start talking. The button turns red and changes its label to show it's
-listening, and the words appear on screen as you speak. Click again to send.
+listening, and an interim transcript appears on screen as you speak, so you
+can see it's hearing you. Click again to send.
 If it hears nothing, it says "I didn't catch that, try again" instead of
 silently failing.
 
