@@ -27,45 +27,109 @@ and fixing them stops the calls.
 
 ## What it does
 
-- Finds the right centre from a name or a suburb, and asks when ambiguous
-- Answers opening hours per facility, including seasonal closures
+- Finds the right centre from a name or a suburb, and asks when it's ambiguous
+- Answers opening hours per facility, including seasonal pool closures
 - Answers program questions: swim lessons, OSHC, gymnastics
 - Takes a message when it cannot answer, reading the details back first
 - Escalates anything involving a child's safety, an injury, a complaint or
   a refund straight to a person, with no attempt to resolve it
-- Logs every turn, and routes messages to the right centre
+- Logs every turn and every message, viewable on an admin page
+
+The sample data covers **13 centres**: seven recreation and aquatic centres,
+four OSHC services, a gymnastics academy and a head office. Two of them are
+in Muralong on purpose, so the agent has to ask which one the caller means.
+
+## Making a call
+
+![The caller page during a conversation](docs/caller.png)
+
+Open `http://localhost:8000` in Chrome or Edge. Click the microphone once to
+start talking. The button turns red and changes its label to show it's
+listening, and the words appear on screen as you speak. Click again to send.
+If it hears nothing, it says "I didn't catch that, try again" instead of
+silently failing.
+
+The reply is spoken by an ElevenLabs voice. Generated audio is cached on disk
+by a hash of the text, so repeated phrases like the greeting cost nothing
+after the first time. If ElevenLabs is not configured, times out (2 seconds)
+or returns an error, the browser speaks the reply with its own voice
+instead. The call carries on either way.
+
+## The admin page
+
+![The admin page showing messages, conversations and topics](docs/admin.png)
+
+`http://localhost:8000/admin` shows three tables:
+
+- **Messages taken**: reference, time, caller, callback number, centre, topic
+- **Recent conversations**: what the caller said, what the agent replied,
+  which tools it used, and whether the call was escalated
+- **Topics by frequency**: what people ring about, most common first
+
+The third table is the point of the project: it's the list of website pages
+to fix.
 
 ## Architecture
 
-    Browser page    mic capture, plays the reply        HTML + JS (Web Speech API)
+    Browser page    mic capture, plays the reply         HTML + JS (Web Speech API)
     API             receives text, returns reply+audio   Python (FastAPI)
     Receptionist    decides what to do, calls tools      Python + Claude API
-    Voice           turns the reply into speech          ElevenLabs
+    Tools           five plain functions, no AI          Python
+    Voice           turns the reply into speech          ElevenLabs, browser fallback
     Data            centres, programs, log, messages     SQLite
-    Delivery        gets messages to a person            n8n
 
 One turn: speech → text in the browser → `POST /api/turn` → the model is
 given the conversation and five tools → it calls a tool → Python queries
-SQLite → the model writes the reply → ElevenLabs speaks it → the turn is
-logged → if a message was taken, a webhook fires to n8n.
+SQLite → the model writes the reply → ElevenLabs speaks it (or the browser
+does) → the turn is logged.
 
-**The model cannot state a fact it did not get from a tool call.** There is
-no path from the model to an opening hour except through a function running
-against the database. That is the core design decision and most of the
-accuracy story.
+## The five tools
+
+The model never touches the database directly. It can only call these five
+functions in `app/tools.py`, which are plain Python with no AI in them. Each
+one returns a result for the "not found" case rather than raising, so the
+model is told "no such centre" and can say so.
+
+| Tool | What it does |
+| --- | --- |
+| `find_centre(query, purpose)` | Matches a centre by name or suburb. Normalises speech ("the one at Muralong", "and" for "&"), returns up to five matches and flags when there were more. `purpose` filters out head office when the caller wants hours or programs. |
+| `get_opening_hours(centre_id, facility, day)` | Hours for one facility on one day, `today` included. Tells apart "closed that day", "closed for the season" and "no such facility". |
+| `get_program_info(program, centre_id)` | Programs at a centre matching a name, type or description: ages, price per session, details. An empty list means that centre doesn't offer it. |
+| `take_message(name, phone, centre_id, topic, message)` | Saves the message to SQLite and returns a reference number. Called only after the details have been read back to the caller. |
+| `escalate(reason)` | Ends the conversation and hands the call to a person. Nothing else runs after it. |
 
 ## Guardrails
 
-| Guardrail | How |
-| --- | --- |
-| No invented facts | Every fact comes from a tool call; unknowns return "not found" |
-| Escalation | Safety, injury, complaints and refunds bypass the agent entirely |
-| Disclosure | The agent identifies itself as automated in its first sentence |
-| Minimal data | Name, callback number, centre and topic. Nothing else |
-| No child details | The agent never discusses an individual child |
-| Degradation | ElevenLabs or n8n failing does not break a call |
+**Grounding through tools.** Every opening hour, price and program detail
+the agent states comes from a tool call against the database. There is no
+other path from the model to a fact. If a tool returns nothing, the agent
+says it doesn't know and offers to take a message.
+*Why:* a receptionist that confidently gives the wrong pool hours is worse
+than no receptionist. The caller drives there, finds it closed, and stops
+trusting the service. Making the database the only source of facts is what
+makes the answers trustworthy.
 
-Data flows and retention are documented in [retention.md](retention.md).
+**Escalation.** Anything about a child's safety, an injury, a complaint or a
+refund goes straight to `escalate()`. No clarifying questions first, no
+looking anything up. The receptionist loop stops as soon as that tool
+returns and replies with a fixed hand-off line, so the model can't add
+anything after it.
+*Why:* these are the calls where a wrong word causes real harm or real
+liability. An automated system shouldn't attempt them at all, and the
+person who picks up shouldn't have to undo something it said.
+
+**Minimal data collection.** The agent collects a name, a callback number,
+which centre, and the reason for calling. Nothing else: no date of birth,
+no address, no payment details, and nothing about any child. It won't
+discuss an individual child at all, and takes a message instead.
+*Why:* anything the system doesn't collect can't leak, be misused or need
+deleting later. These four things are all a staff member needs to call
+back. Information about children carries the highest duty of care, so the
+safest amount to hold is none.
+
+The agent also says it is automated in its first sentence, so no caller
+thinks they're talking to a person. Data flows and retention are documented
+in [retention.md](retention.md).
 
 ## Running it
 
@@ -77,14 +141,8 @@ Data flows and retention are documented in [retention.md](retention.md).
 
 Then `http://localhost:8000` to make a call, `/admin` for the log.
 
-For the n8n delivery layer:
-
-    docker volume create n8n_data
-    docker run -it --rm --name n8n -p 5678:5678 \
-      -e GENERIC_TIMEZONE="Australia/Adelaide" -e TZ="Australia/Adelaide" \
-      -v n8n_data:/home/node/.n8n docker.n8n.io/n8nio/n8n
-
-Workflows are in `n8n/` and import through the editor at `localhost:5678`.
+To try the conversation without a microphone, `python -m app.cli` runs the
+same receptionist in the terminal.
 
 ## Configuration
 
@@ -95,29 +153,36 @@ Workflows are in `n8n/` and import through the editor at `localhost:5678`.
 | `ELEVENLABS_API_KEY` | No | Without it, the browser speaks the reply |
 | `ELEVENLABS_VOICE_ID` | No | Use an Australian voice |
 | `ELEVENLABS_MODEL` | No | Flash/Turbo: lower latency, lower cost |
-| `N8N_WEBHOOK_URL` | No | Production URL. Without it, messages save but do not route |
-| `N8N_SHARED_TOKEN` | No | Protects the digest endpoint |
-| `DB_PATH` | Yes | — |
+| `DB_PATH` | Yes | Defaults to `data/frontdesk.db` |
+| `AUDIO_CACHE_DIR` | No | Defaults to `audio_cache` |
+| `N8N_WEBHOOK_URL` | No | Reserved for message delivery; not used yet |
+| `N8N_SHARED_TOKEN` | No | Reserved for message delivery; not used yet |
 
 ## Tests
 
     pytest -v
 
-<!-- TODO after the build:
-     - screenshot of the admin page → docs/admin.png, embed it above
-     - screenshot of the n8n canvas → docs/n8n.png
-     - link to the demo video
-     - anything in Known limits that turned out differently
--->
+The tools were tested before the model was wired up. The 17 tests in
+`tests/test_tools.py` run against a seeded database.
 
 ## Known limits
 
-- Chrome and Edge only. Speech capture uses the Web Speech API.
-- Speech recognition mishears place names, particularly invented ones.
-- The data is invented sample data, not a real organisation's.
-- It cannot book, take payment, or access member accounts, by design.
-- Correct facts can still be phrased ambiguously; the grounding guarantees
-  the facts, not the wording.
+- **Chrome and Edge only.** Speech capture uses the Web Speech API, which
+  Firefox and Safari don't fully support.
+- **Speech recognition mishears place names, particularly invented ones.**
+  "Muralong" or "Kalindra" may come back as ordinary words. `find_centre`
+  normalises what it can, but it can't recover a name the browser never
+  heard correctly.
+- **The data is fictional sample data**, not a real organisation's. The
+  13 centres, hours, programs and prices are all invented.
+- **No booking or payments.** It can't book a class, take payment or open a
+  member account. That's deliberate: those need identity checks and payment
+  handling, which a phone receptionist demo shouldn't attempt.
+- **Messages are saved but not sent anywhere yet.** They're stored in SQLite
+  and shown on `/admin`. Forwarding them to the right centre through an n8n
+  webhook is planned but not built.
+- **Grounding guarantees the facts, not the wording.** A correct fact can
+  still be phrased ambiguously.
 
 ## Licence
 

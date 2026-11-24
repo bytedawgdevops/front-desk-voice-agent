@@ -78,43 +78,73 @@
       margin-bottom: 1.5rem;
     }
 
+    #interim {
+      width: 100%;
+      max-width: 640px;
+      min-height: 1.5em;
+      margin-bottom: 1rem;
+      text-align: right;
+      font-style: italic;
+      color: #4a6a8a;
+      font-size: 0.95rem;
+    }
+
     #talk-btn {
-      width: 80px;
-      height: 80px;
-      border-radius: 50%;
+      min-width: 180px;
+      height: 64px;
+      padding: 0 1.5rem;
+      border-radius: 32px;
       border: none;
       background: #1a3a5c;
       color: #fff;
-      font-size: 2rem;
+      font-size: 1rem;
+      font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
+      gap: 0.6rem;
       box-shadow: 0 4px 12px rgba(0,0,0,0.2);
       transition: background 0.15s, transform 0.1s;
       user-select: none;
     }
 
+    #talk-btn .icon { font-size: 1.6rem; }
+
     #talk-btn:hover  { background: #24527a; }
-    #talk-btn.active { background: #c0392b; transform: scale(1.08); }
-    #talk-btn:disabled { background: #aaa; cursor: default; transform: none; }
+    #talk-btn.active { background: #c0392b; transform: scale(1.05); animation: pulse 1.4s ease-in-out infinite; }
+    #talk-btn.active:hover { background: #a93226; }
+    #talk-btn:disabled { background: #aaa; cursor: default; transform: none; animation: none; }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0.5); }
+      50%      { box-shadow: 0 0 0 12px rgba(192, 57, 43, 0); }
+    }
   </style>
 </head>
 <body>
 
 <header>
   <h1>Kestrel Community Recreation</h1>
-  <p>Automated front desk &mdash; press and hold to speak</p>
+  <p>Automated front desk &mdash; click the microphone to speak</p>
 </header>
 
 <div id="conversation"></div>
-<div id="status">Press the button to speak</div>
-<button id="talk-btn" aria-label="Press and hold to speak">🎙</button>
+<div id="interim" aria-live="polite"></div>
+<div id="status" aria-live="polite">Click the button to speak</div>
+<button id="talk-btn" aria-pressed="false">
+  <span class="icon" aria-hidden="true">🎙</span>
+  <span class="label">Start speaking</span>
+</button>
 
 <script>
   const btn          = document.getElementById('talk-btn');
   const statusEl     = document.getElementById('status');
   const conversation = document.getElementById('conversation');
+  const interimEl    = document.getElementById('interim');
+  const btnLabel     = btn.querySelector('.label');
+
+  const IDLE_STATUS  = 'Click the button to speak';
 
   const conversationId = crypto.randomUUID();
 
@@ -123,52 +153,99 @@
     window.SpeechRecognition || window.webkitSpeechRecognition;
 
   let recognition = null;
-  let recognising = false;
+  let recognising = false;   // a session is running (between start() and onend)
+  let stopping    = false;   // stop() called, waiting for final results + onend
+  let finalText   = '';
+  let interimText = '';
+  let lastError   = null;
 
   if (SpeechRecognition) {
     recognition = new SpeechRecognition();
     recognition.lang = 'en-AU';
-    recognition.interimResults = false;
+    recognition.continuous = true;
+    recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
+    // Rebuild the whole transcript from event.results each time: finalised
+    // segments are kept, the trailing unfinalised segment is shown as interim.
     recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript.trim();
-      if (transcript) sendTurn(transcript);
+      let fin = '';
+      let interim = '';
+      for (let i = 0; i < event.results.length; i++) {
+        const piece = event.results[i][0].transcript;
+        if (event.results[i].isFinal) fin += piece;
+        else interim += piece;
+      }
+      finalText   = fin;
+      interimText = interim;
+      interimEl.textContent = (finalText + interimText).trim();
     };
 
     recognition.onerror = (event) => {
-      setStatus('Could not hear you — try again.');
-      setListening(false);
+      lastError = event.error;
+      if (event.error === 'no-speech') {
+        setStatus("I didn't catch that, try again");
+      } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        setStatus('Microphone access was blocked. Allow it in the browser and try again.');
+      } else if (event.error !== 'aborted') {
+        setStatus('Could not hear you — try again.');
+      }
     };
 
-    recognition.onend = () => setListening(false);
+    // Fires after a user stop, after an error, or if the browser ends the
+    // session itself. Send whatever was heard; otherwise explain why not.
+    recognition.onend = () => {
+      const transcript = (finalText + interimText).trim();
+      setListening(false);
+      stopping = false;
+      interimEl.textContent = '';
+
+      if (transcript) {
+        sendTurn(transcript);
+      } else if (!lastError) {
+        setStatus("I didn't catch that, try again");
+      }
+    };
   } else {
     btn.disabled = true;
     setStatus('Speech recognition is not supported in this browser. Try Chrome or Edge.');
   }
 
   // ── Button events ────────────────────────────────────────────────────────
-  btn.addEventListener('mousedown',  startListening);
-  btn.addEventListener('touchstart', (e) => { e.preventDefault(); startListening(); });
-  btn.addEventListener('mouseup',    stopListening);
-  btn.addEventListener('mouseleave', stopListening);
-  btn.addEventListener('touchend',   stopListening);
+  btn.addEventListener('click', () => {
+    if (recognising) stopListening();
+    else startListening();
+  });
 
   function startListening() {
     if (!recognition || recognising || btn.disabled) return;
-    recognition.start();
+    finalText   = '';
+    interimText = '';
+    lastError   = null;
+    interimEl.textContent = '';
+    try {
+      recognition.start();
+    } catch (err) {
+      // start() throws if a previous session has not fully ended yet.
+      setStatus('Could not start the microphone — try again.');
+      return;
+    }
     setListening(true);
-    setStatus('Listening…');
+    setStatus('Listening… click again when you have finished');
   }
 
   function stopListening() {
-    if (!recognition || !recognising) return;
-    recognition.stop();
+    if (!recognition || !recognising || stopping) return;
+    stopping = true;
+    setStatus('Processing…');
+    recognition.stop();   // onend will send the transcript
   }
 
   function setListening(active) {
     recognising = active;
     btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', String(active));
+    btnLabel.textContent = active ? 'Listening — click to send' : 'Start speaking';
   }
 
   // ── API call ─────────────────────────────────────────────────────────────
@@ -192,7 +269,7 @@
     }
 
     addBubble(data.reply, 'agent', data.escalated);
-    setStatus(data.escalated ? 'Call transferred to staff.' : 'Press the button to speak');
+    setStatus(data.escalated ? 'Call transferred to staff.' : IDLE_STATUS);
 
     if (data.audio_url) {
       playAudio(data.audio_url, () => { if (!data.escalated) btn.disabled = false; });
