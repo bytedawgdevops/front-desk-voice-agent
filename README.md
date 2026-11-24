@@ -84,6 +84,12 @@ given the conversation and five tools → it calls a tool → Python queries
 SQLite → the model writes the reply → ElevenLabs speaks it (or the browser
 does) → the turn is logged.
 
+**Each turn has a limit of five model round trips.** If the model is still
+calling tools after five rounds, the loop stops and the caller hears a fixed
+"Let me take a message and have someone call you back." A confused model
+can't loop forever, run up API costs, or leave a caller waiting in silence.
+The limit is `_TOOL_CAP` in `app/receptionist.py`.
+
 ## The five tools
 
 The model never touches the database directly. It can only call these five
@@ -110,14 +116,26 @@ than no receptionist. The caller drives there, finds it closed, and stops
 trusting the service. Making the database the only source of facts is what
 makes the answers trustworthy.
 
-**Escalation.** Anything about a child's safety, an injury, a complaint or a
-refund goes straight to `escalate()`. No clarifying questions first, no
-looking anything up. The receptionist loop stops as soon as that tool
-returns and replies with a fixed hand-off line, so the model can't add
-anything after it.
+**Escalation, with the hand-off enforced in code.** The system prompt tells
+the model to call `escalate()` straight away for anything about a child's
+safety, an injury, a complaint or a refund. No clarifying questions first,
+no looking anything up. Once it does, the code takes over, and the model
+has no say in what happens next:
+
+- the receptionist loop stops, and any other tool calls in the same
+  response are dropped
+- the caller hears a fixed hand-off line written in code, not text the
+  model generated
+- the turn is logged as escalated and flagged in the Escalated column on
+  `/admin`
+- the caller page disables the microphone, so the conversation can't
+  continue with the agent
+
 *Why:* these are the calls where a wrong word causes real harm or real
 liability. An automated system shouldn't attempt them at all, and the
-person who picks up shouldn't have to undo something it said.
+person who picks up shouldn't have to undo something it said. Putting the
+hand-off in code means that once escalation starts, no prompt wording or
+model mistake can make the agent keep talking.
 
 **Minimal data collection.** The agent collects a name, a callback number,
 which centre, and the reason for calling. Nothing else: no date of birth,
@@ -182,6 +200,14 @@ The tools were tested before the model was wired up. The 17 tests in
 - **Messages are saved but not sent anywhere yet.** They're stored in SQLite
   and shown on `/admin`. Forwarding them to the right centre through an n8n
   webhook is planned but not built.
+- **Deciding to escalate is the model's call.** The hand-off is enforced in
+  code, but recognising that a call needs escalating relies on the model
+  following the system prompt. No keyword check in code backs it up, so an
+  unusually worded complaint could be missed.
+- **Conversations are held in memory and not capped in length.** Each turn
+  is limited to five round trips, but a conversation can have any number of
+  turns. History lives in the server process, so it grows as the call goes
+  on and is lost on restart. The call log in SQLite survives.
 - **Grounding guarantees the facts, not the wording.** A correct fact can
   still be phrased ambiguously.
 
