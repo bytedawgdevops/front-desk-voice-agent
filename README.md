@@ -1,216 +1,174 @@
 # Front Desk
 
-A voice receptionist for a multi-site community recreation organisation.
-You speak a question, it answers from the organisation's own data, takes a
-message when it cannot answer, and hands anything serious to a person.
+[![CI](https://github.com/bytedawgdevops/front-desk-voice-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/bytedawgdevops/front-desk-voice-agent/actions/workflows/ci.yml)
 
-> **This is a portfolio prototype.** Kestrel Community Recreation is a
-> fictional organisation and every centre, program and price in this
-> repository is invented. It is not affiliated with, and does not represent,
-> any real organisation.
+Front Desk is a voice receptionist for a multi-site community recreation
+organisation. You ask a question out loud; it answers from the
+organisation's database, takes a message when it can't answer, and hands
+anything serious to a person.
+
+> **This is a portfolio demo.** Kestrel Community Recreation is a fictional
+> organisation, and every centre, program and price in this repository is
+> invented. It is not affiliated with any real organisation.
 
 ## The problem
 
-Community recreation organisations run dozens of sites — pools, gyms,
-outside school hours care, early learning. Their websites typically publish
-a phone number for every centre and opening hours for none of them.
+Community recreation organisations run dozens of sites: pools, gyms,
+outside school hours care. Their websites often list a phone number for
+every centre and opening hours for none of them. So every routine question
+becomes a phone call, which lands on a desk already serving a queue, or
+rings out after hours.
 
-So every routine question becomes a phone call: is the pool open, when does
-the next swim lesson intake start, who do I talk to about vacation care.
-That call lands on a desk where someone is already serving the queue in
-front of them, and after hours it rings out.
-
-Front Desk answers those calls. More usefully, it logs them — which gives
-the organisation, for the first time, a record of what people actually ring
-to ask. Three weeks of that data says which pages on the website to fix,
-and fixing them stops the calls.
-
-## What it does
-
-- Finds the right centre from a name or a suburb, and asks when it's ambiguous
-- Answers opening hours per facility, including seasonal pool closures
-- Answers program questions: swim lessons, OSHC, gymnastics
-- Takes a message when it cannot answer, reading the details back first
-- Escalates anything involving a child's safety, an injury, a complaint or
-  a refund straight to a person, with no attempt to resolve it
-- Logs every turn and every message, viewable on an admin page
-
-The sample data covers **13 centres**: seven recreation and aquatic centres,
-four OSHC services, a gymnastics academy and a head office. Two of them are
-in Muralong on purpose, so the agent has to ask which one the caller means.
-
-## Making a call
-
-![The caller page during a conversation](docs/caller.png)
-
-Open `http://localhost:8000` in Chrome or Edge. Click the microphone once to
-start talking. The button turns red and changes its label to show it's
-listening, and an interim transcript appears on screen as you speak, so you
-can see it's hearing you. Click again to send.
-If it hears nothing, it says "I didn't catch that, try again" instead of
-silently failing.
-
-The reply is spoken by an ElevenLabs voice. Generated audio is cached on disk
-by a hash of the text, so repeated phrases like the greeting cost nothing
-after the first time. If ElevenLabs is not configured, times out (2 seconds)
-or returns an error, the browser speaks the reply with its own voice
-instead. The call carries on either way.
-
-## The admin page
-
-![The admin page showing messages, conversations and topics](docs/admin.png)
-
-`http://localhost:8000/admin` shows three tables:
-
-- **Messages taken**: reference, time, caller, callback number, centre, topic
-- **Recent conversations**: what the caller said, what the agent replied,
-  which tools it used, and whether the call was escalated
-- **Topics by frequency**: what people ring about, most common first
-
-The third table is the point of the project: it's the list of website pages
-to fix.
+Front Desk answers those calls and logs them. The log is the useful part:
+it's a record of what people actually ring to ask, which tells the
+organisation which web pages to fix.
 
 ## Architecture
 
-    Browser page    mic capture, plays the reply         HTML + JS (Web Speech API)
-    API             receives text, returns reply+audio   Python (FastAPI)
-    Receptionist    decides what to do, calls tools      Python + Claude API
-    Tools           five plain functions, no AI          Python
-    Voice           turns the reply into speech          ElevenLabs, browser fallback
-    Data            centres, programs, log, messages     SQLite
+    Browser     Web Speech API turns speech into text;     static/index.html
+                plays the reply
+    API         POST /api/turn, admin endpoints             app/main.py (FastAPI)
+    Agent       Claude decides what to do, calls tools      app/receptionist.py (Anthropic API)
+    Tools       five plain functions, no AI                 app/tools.py
+    Voice       ElevenLabs, cached to disk;                 app/voice.py
+                browser speech if it fails
+    Data        centres, hours, programs, log, messages     SQLite (stdlib sqlite3)
 
-One turn: speech → text in the browser → `POST /api/turn` → the model is
-given the conversation and five tools → it calls a tool → Python queries
-SQLite → the model writes the reply → ElevenLabs speaks it (or the browser
-does) → the turn is logged.
+One turn: the browser recognises speech and sends the text to
+`POST /api/turn`. Claude gets the conversation and the five tools, calls
+whichever it needs, and writes a reply from the results. The server turns
+the reply into speech with ElevenLabs and logs the turn to SQLite.
 
-**Each turn has a limit of five model round trips.** If the model is still
-calling tools after five rounds, the loop stops and the caller hears a fixed
-"Let me take a message and have someone call you back." A confused model
-can't loop forever, run up API costs, or leave a caller waiting in silence.
-The limit is `_TOOL_CAP` in `app/receptionist.py`.
+Speech output is cached on disk by a hash of the reply text, so repeated
+phrases are free after the first time. If ElevenLabs isn't configured,
+errors, or takes longer than 2 seconds, the browser speaks the reply
+instead. The call carries on either way.
 
-## The five tools
+The mic is click-to-talk: click once to start, and an interim transcript
+appears on screen as you speak; click again to send.
 
-The model never touches the database directly. It can only call these five
-functions in `app/tools.py`, which are plain Python with no AI in them. Each
-one returns a result for the "not found" case rather than raising, so the
-model is told "no such centre" and can say so.
+Each turn is limited to five model round trips (`_TOOL_CAP`). After that the
+agent offers to take a message, so a confused model can't loop.
 
-| Tool | What it does |
-| --- | --- |
-| `find_centre(query, purpose)` | Matches a centre by name or suburb. Normalises speech ("the one at Muralong", "and" for "&"), returns up to five matches and flags when there were more. `purpose` filters out head office when the caller wants hours or programs. |
-| `get_opening_hours(centre_id, facility, day)` | Hours for one facility on one day, `today` included. Tells apart "closed that day", "closed for the season" and "no such facility". |
-| `get_program_info(program, centre_id)` | Programs at a centre matching a name, type or description: ages, price per session, details. An empty list means that centre doesn't offer it. |
-| `take_message(name, phone, centre_id, topic, message)` | Saves the message to SQLite and returns a reference number. Called only after the details have been read back to the caller. |
-| `escalate(reason)` | Ends the conversation and hands the call to a person. Nothing else runs after it. |
+## Seeded data
+
+`python -m data.seed` creates the database with:
+
+- **13 centres**: 7 recreation and aquatic centres, 4 OSHC services,
+  1 gymnastics academy, 1 head office. Two are in Muralong on purpose, so
+  the agent has to ask which one the caller means.
+- **29 facilities** with **183** opening-hour rows. Two outdoor pools have
+  seasonal closures.
+- **48 programs**: 31 swim lesson programs, 12 OSHC sessions,
+  5 gymnastics classes.
+
+## The tools
+
+The model can't touch the database or anything else directly. These five
+functions in `app/tools.py` are all it can do. Each one returns a result for
+"not found" instead of raising an error.
+
+- `find_centre(query, purpose)`: **reads** centres by name or suburb and
+  returns up to five matches. It can't see messages or the call log.
+- `get_opening_hours(centre_id, facility, day)`: **reads** one facility's
+  hours for one day, including seasonal closures. It's read-only.
+- `get_program_info(program, centre_id)`: **reads** programs at one centre
+  (ages, price, description). It's read-only.
+- `take_message(name, phone, centre_id, topic, message)`: **inserts one
+  row** into `messages`. It can't read, change or delete anything.
+- `escalate(reason)`: returns a fixed value. The code then stops the turn,
+  plays a hand-off line written in code, and disables the mic. It touches no
+  data.
 
 ## Guardrails
 
-**Grounding through tools.** Every opening hour, price and program detail
-the agent states comes from a tool call against the database. There is no
-other path from the model to a fact. If a tool returns nothing, the agent
-says it doesn't know and offers to take a message.
-*Why:* a receptionist that confidently gives the wrong pool hours is worse
-than no receptionist. The caller drives there, finds it closed, and stops
-trusting the service. Making the database the only source of facts is what
-makes the answers trustworthy.
+- **Grounding through tools.** Every hour, price and program detail must
+  come from a tool call. If the data doesn't answer the question, the agent
+  says so and offers to take a message. A wrong answer about pool hours is
+  worse than no answer.
+- **Escalation.** A child's safety, an injury, a complaint or a refund goes
+  straight to `escalate()`, with no attempt to resolve it. These calls are
+  where a wrong word causes real harm. The model decides *when*; the code
+  enforces what happens next.
+- **Minimal data collection.** The agent asks only for a name, callback
+  number, centre and reason, and never anything about a child. What isn't
+  collected can't leak. The transcript is still stored in full; see
+  [retention.md](retention.md).
 
-**Escalation, with the hand-off enforced in code.** The system prompt tells
-the model to call `escalate()` straight away for anything about a child's
-safety, an injury, a complaint or a refund. No clarifying questions first,
-no looking anything up. Once it does, the code takes over, and the model
-has no say in what happens next:
+## Setup
 
-- the receptionist loop stops, and any other tool calls in the same
-  response are dropped
-- the caller hears a fixed hand-off line written in code, not text the
-  model generated
-- the turn is logged as escalated and flagged in the Escalated column on
-  `/admin`
-- the caller page disables the microphone, so the conversation can't
-  continue with the agent
+Requires Python 3.11.
 
-*Why:* these are the calls where a wrong word causes real harm or real
-liability. An automated system shouldn't attempt them at all, and the
-person who picks up shouldn't have to undo something it said. Putting the
-hand-off in code means that once escalation starts, no prompt wording or
-model mistake can make the agent keep talking.
-
-**Minimal data collection.** The agent collects a name, a callback number,
-which centre, and the reason for calling. Nothing else: no date of birth,
-no address, no payment details, and nothing about any child. It won't
-discuss an individual child at all, and takes a message instead.
-*Why:* anything the system doesn't collect can't leak, be misused or need
-deleting later. These four things are all a staff member needs to call
-back. Information about children carries the highest duty of care, so the
-safest amount to hold is none.
-
-The agent also says it is automated in its first sentence, so no caller
-thinks they're talking to a person. Data flows and retention are documented
-in [retention.md](retention.md).
-
-## Running it
-
-    python3 -m venv .venv && source .venv/bin/activate
+    git clone https://github.com/bytedawgdevops/front-desk-voice-agent.git
+    cd front-desk-voice-agent
+    python3.11 -m venv .venv && source .venv/bin/activate
     pip install -r requirements.txt
-    cp .env.example .env        # then fill in your keys
+    cp .env.example .env        # add ANTHROPIC_API_KEY; ElevenLabs keys optional
     python -m data.seed
     uvicorn app.main:app --reload --port 8000
 
-Then `http://localhost:8000` to make a call, `/admin` for the log.
+Open `http://localhost:8000`. To try the agent without a microphone, run
+`python -m app.cli`.
 
-To try the conversation without a microphone, `python -m app.cli` runs the
-same receptionist in the terminal.
+Without ElevenLabs keys, the browser speaks the replies. `.env.example` also
+has two `N8N_*` placeholders that no code uses yet.
 
-## Configuration
+**Re-running `python -m data.seed` deletes all messages and call logs.** It
+drops and recreates every table.
 
-| Variable | Required | Notes |
-| --- | --- | --- |
-| `ANTHROPIC_API_KEY` | Yes | — |
-| `ANTHROPIC_MODEL` | Yes | Fast model; latency matters on a call |
-| `ELEVENLABS_API_KEY` | No | Without it, the browser speaks the reply |
-| `ELEVENLABS_VOICE_ID` | No | Use an Australian voice |
-| `ELEVENLABS_MODEL` | No | Flash/Turbo: lower latency, lower cost |
-| `DB_PATH` | Yes | Defaults to `data/frontdesk.db` |
-| `AUDIO_CACHE_DIR` | No | Defaults to `audio_cache` |
-| `N8N_WEBHOOK_URL` | No | Reserved for message delivery; not used yet |
-| `N8N_SHARED_TOKEN` | No | Reserved for message delivery; not used yet |
+## Browser support
+
+**Chrome and Edge only.** Speech recognition uses the Web Speech API, which
+Firefox and Safari don't fully support. In Chrome, recognition is done by
+Google's servers.
+
+## Admin page
+
+`http://localhost:8000/admin` shows messages taken, recent conversations
+(what the caller said, the reply, tools used, whether it was escalated), and
+the most common topics.
+
+**It has no authentication.** Neither does `/api/admin/*`. Anyone who can
+reach the server can read every message and transcript. That's acceptable
+only because uvicorn listens on localhost by default.
 
 ## Tests
 
     pytest -v
 
-The tools were tested before the model was wired up. The 17 tests in
-`tests/test_tools.py` run against a seeded database.
+There are 17 tests in `tests/test_tools.py`, covering the tools against a
+temporary seeded database, including an SQL injection test. They make no
+API calls. CI runs them on every push and pull request, along with ruff,
+bandit and pip-audit.
+
+## Security
+
+[SECURITY.md](SECURITY.md) explains how to report a problem.
+[docs/threat-model.md](docs/threat-model.md) lists the threats, what's
+mitigated, and what isn't.
 
 ## Known limits
 
-- **Chrome and Edge only.** Speech capture uses the Web Speech API, which
-  Firefox and Safari don't fully support.
-- **Speech recognition mishears place names, particularly invented ones.**
-  "Muralong" or "Kalindra" may come back as ordinary words. `find_centre`
-  normalises what it can, but it can't recover a name the browser never
-  heard correctly.
-- **The data is fictional sample data**, not a real organisation's. The
-  13 centres, hours, programs and prices are all invented.
-- **No booking or payments.** It can't book a class, take payment or open a
-  member account. That's deliberate: those need identity checks and payment
-  handling, which a phone receptionist demo shouldn't attempt.
-- **Messages are saved but not sent anywhere yet.** They're stored in SQLite
-  and shown on `/admin`. Forwarding them to the right centre through an n8n
-  webhook is planned but not built.
-- **Deciding to escalate is the model's call.** The hand-off is enforced in
-  code, but recognising that a call needs escalating relies on the model
-  following the system prompt. No keyword check in code backs it up, so an
-  unusually worded complaint could be missed.
-- **Conversations are held in memory and not capped in length.** Each turn
-  is limited to five round trips, but a conversation can have any number of
-  turns. History lives in the server process, so it grows as the call goes
-  on and is lost on restart. The call log in SQLite survives.
-- **Grounding guarantees the facts, not the wording.** A correct fact can
-  still be phrased ambiguously.
+- **Local only.** It's meant to run on your own machine, not be deployed.
+- **No admin authentication.** See above.
+- **No rate limiting.** `/api/turn` accepts unlimited requests, and each one
+  can cost money in Claude and ElevenLabs calls.
+- **No turn cap.** `_TOOL_CAP` limits the round trips within one turn, not
+  the number of turns. A conversation can go on forever, and its history is
+  held in memory, grows with every turn and is lost on restart.
+- **No automatic data deletion.** Transcripts and messages stay until
+  deleted by hand.
+- **Speech recognition mishears invented place names**, like "Muralong".
+- **Escalation depends on the model** noticing the topic; no keyword check
+  in code backs it up.
+- **No booking or payments**, by design.
 
-## Licence
+## What I'd build next
 
-MIT. The sample data is fictional and free to reuse.
+These are designed but not built:
+
+- **Telephony.** A real phone number, with call audio streamed to speech
+  recognition and the reply streamed back, so callers don't need a browser.
+- **Message delivery.** An automation layer that sends each saved message
+  to the right centre's staff. It would run after the database write, so a
+  failed delivery never loses a message.
