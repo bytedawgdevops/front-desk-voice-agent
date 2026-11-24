@@ -110,8 +110,7 @@ Requires Python 3.11.
 Open `http://localhost:8000`. To try the agent without a microphone, run
 `python -m app.cli`.
 
-Without ElevenLabs keys, the browser speaks the replies. `.env.example` also
-has two `N8N_*` placeholders that no code uses yet.
+Without ElevenLabs keys, the browser speaks the replies.
 
 **Re-running `python -m data.seed` deletes all messages and call logs.** It
 drops and recreates every table.
