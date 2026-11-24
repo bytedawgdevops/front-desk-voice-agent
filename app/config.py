@@ -4,6 +4,7 @@ Every other module imports from here; nothing else calls os.getenv().
 """
 
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()

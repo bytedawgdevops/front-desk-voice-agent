@@ -8,7 +8,6 @@ Type a question and press Enter. The reply and any tool calls are printed.
 Type 'quit' or press Ctrl-C to exit.
 """
 
-import sys
 import uuid
 
 from app.receptionist import reply

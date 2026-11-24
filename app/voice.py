@@ -66,6 +66,7 @@ def speak(text: str) -> str | None:
         response.raise_for_status()
         cached.write_bytes(response.content)
         return f'/audio/{cached.name}'
-    except Exception as exc:
+    # Any ElevenLabs failure falls back to browser speech; never break a call.
+    except Exception as exc:  # noqa: BLE001
         logger.warning('ElevenLabs failed: %s', exc)
         return None

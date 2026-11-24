@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Seed the Kestrel Community Recreation database.
 Drop-and-recreate: safe to run repeatedly.

@@ -284,7 +284,8 @@ def take_message(
                 (name, phone, centre_id or None, topic, message),
             )
             return {'status': 'ok', 'message_id': cur.lastrowid}
-    except Exception as exc:
+    # Tools return, never raise: any DB failure becomes an error result.
+    except Exception as exc:  # noqa: BLE001
         return {'status': 'error', 'detail': str(exc)}
 
 

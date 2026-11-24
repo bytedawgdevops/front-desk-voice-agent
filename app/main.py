@@ -13,9 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import app.db as _db
+from app.config import AUDIO_CACHE_DIR
 from app.receptionist import reply
 from app.voice import speak
-from app.config import AUDIO_CACHE_DIR
 
 app = FastAPI(title='Kestrel Front Desk')
 
