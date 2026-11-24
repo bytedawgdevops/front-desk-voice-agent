@@ -60,7 +60,7 @@ def test_find_centre_by_name():
     c = centres[0]
     assert c['name'] == 'Vendarah Aquatic Centre'
     assert c['suburb'] == 'Vendarah'
-    assert c['phone'] == '08 8412 8800'
+    assert c['phone'] == '08 8412 8801'
 
 
 def test_find_centre_by_suburb():
