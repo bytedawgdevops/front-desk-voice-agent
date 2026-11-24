@@ -11,3 +11,4 @@ audio_cache/
 .idea/
 .vscode/
 env
+.claude/settings.local.json
