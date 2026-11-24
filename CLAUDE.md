@@ -20,10 +20,8 @@ message when it cannot, and hands anything serious to a person.
 - Anything about a child's safety, an injury, a complaint or a refund goes
   straight to escalate(). No attempt to resolve it.
 - Never discuss an individual child, by name or otherwise. Take a message.
-- SQLite is the source of truth. ElevenLabs and n8n are optional layers:
-  if either fails, the call still works. Fall back to browser speech;
-  log the failed webhook and carry on. A failed delivery never loses a
-  message.
+- SQLite is the source of truth. ElevenLabs is an optional layer: if it
+  fails, the call still works. Fall back to browser speech.
 - Keep the decision logic in one readable module. I have to be able to
   explain every line of it in an interview.
 - Write tests for the tools before wiring up the model.
@@ -33,17 +31,18 @@ message when it cannot, and hands anything serious to a person.
 
 ## Collected personal information
 
-Name, callback number, which centre, and the reason for calling. Nothing
-else. No date of birth, no address, no payment details, no information
-about a child. This limit is enforced in the system prompt and documented
-in retention.md.
+The agent asks for a name, callback number, which centre, and the reason
+for calling. Nothing else. No date of birth, no address, no payment
+details, no information about a child. The system prompt enforces what the
+agent asks for, not what is stored: log_turn keeps the full transcript and
+reply of every turn verbatim, so anything a caller volunteers is stored.
+Documented in retention.md.
 
 ## Stack
 
 Python 3.11, FastAPI, SQLite (stdlib sqlite3), pytest, Anthropic SDK.
 Capture: one HTML page, vanilla JavaScript, Web Speech API (Chrome/Edge).
 Voice output: ElevenLabs, Flash/Turbo model, cached to disk by text hash.
-Delivery: n8n via webhook, fired after the database write, never before.
 
 ## Layout
 
@@ -51,9 +50,9 @@ Delivery: n8n via webhook, fired after the database write, never before.
     app/receptionist.py  the conversation loop and tool declarations
     app/tools.py         the five tools, plain Python, no AI
     app/voice.py         ElevenLabs, with fallback to None
-    app/delivery.py      the n8n webhook, fire and forget
     app/db.py            connection and queries
     app/config.py        environment loading, single source
+    app/cli.py           terminal harness for the receptionist, no mic
     app/prompts/system.md
     data/schema.sql
     data/seed.py
@@ -63,7 +62,7 @@ Delivery: n8n via webhook, fired after the database write, never before.
 
 ## The five tools
 
-    find_centre(query)
+    find_centre(query, purpose)
     get_opening_hours(centre_id, facility, day)
     get_program_info(program, centre_id)
     take_message(name, phone, centre_id, topic, message)

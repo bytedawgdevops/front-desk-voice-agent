@@ -85,7 +85,7 @@ CREATE TABLE messages (
     centre_id   INTEGER REFERENCES centres(id),
     topic       TEXT    NOT NULL,
     message     TEXT    NOT NULL,
-    delivered   INTEGER NOT NULL DEFAULT 0,     -- 1 once n8n webhook succeeds
+    delivered   INTEGER NOT NULL DEFAULT 0,     -- reserved for message delivery; nothing currently sets it
     created_at  TEXT    NOT NULL
                     DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );

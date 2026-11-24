@@ -6,16 +6,13 @@ Usage:
     python -m data.seed
 """
 
-import os
 import sqlite3
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-load_dotenv()
+from app.config import DB_PATH as _DB_PATH
 
 _HERE = Path(__file__).parent
-DB_PATH = Path(os.environ.get('DB_PATH', str(_HERE / 'frontdesk.db')))
+DB_PATH = Path(_DB_PATH)
 SCHEMA_PATH = _HERE / 'schema.sql'
 
 _WEEKDAYS = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')
