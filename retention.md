@@ -1,59 +1,72 @@
 # Data handling and retention
 
-This is a prototype using fictional organisation data. It does, however,
-collect real information from whoever is speaking to it, and it sends some
-of that to third parties. This document says what, where and for how long.
+Front Desk is a demo. Every centre, program and price in it is fictional,
+but anything a person says to it is real speech, and some of it leaves the
+machine. This page says what is stored, where it goes, and how long it
+stays. The data flows below match the PII row in
+[docs/threat-model.md](docs/threat-model.md), which is the reference.
 
-## What is collected
+## What is stored
 
-| Field | Source | Why |
+Everything is stored in one SQLite file: `data/frontdesk.db` by default, or
+wherever `DB_PATH` points.
+
+| Table | What it holds | Written by |
 | --- | --- | --- |
-| Caller name | Spoken by the caller | So the callback is addressed to someone |
-| Callback number | Spoken by the caller | So someone can call back |
-| Centre | Inferred from the conversation | So the message reaches the right site |
-| Topic and message | Spoken by the caller | So the callback is useful |
-| Transcript of each turn | Speech recognition | Call log and quality review |
+| `call_log` | The **full caller transcript and full agent reply, verbatim, for every turn**: two rows per turn, plus the names of the tools called and whether the turn was escalated. Tool arguments are not stored. | `log_turn` in `app/db.py` |
+| `messages` | Name, callback number, centre, topic and message text for each message taken | `take_message` in `app/tools.py` |
 
-**Not collected, by design:** date of birth, address, payment details, and
-any information about an individual child. The agent takes a message and a
-person calls back instead.
+The agent is instructed to ask only for a name, callback number, centre and
+reason for calling, and never for a date of birth, address, payment details
+or anything about a child. That rule limits what the agent **asks for**, not
+what gets stored. `call_log` keeps every word of the transcript, so anything
+a caller volunteers is stored, including details about a child.
+
+Generated speech is also cached as MP3 files in `audio_cache/` (or
+`AUDIO_CACHE_DIR`), named by a hash of the reply text. These are the
+agent's replies, not the caller's voice. A reply that reads back a
+caller's details contains that caller's name and number as audio.
 
 ## Where it goes
 
-| Destination | What it receives | Why |
+| Destination | What it receives | How |
 | --- | --- | --- |
-| Local SQLite (`data/frontdesk.db`) | Everything above | Source of truth |
-| ElevenLabs | The sentence the agent speaks | Speech synthesis |
-| n8n | The message record, including the callback number | Routing to the right centre |
-| Google Sheets (via n8n) | The message record | Shared visibility for staff |
-| Email (via n8n) | The message record | Notification |
+| Google | The caller's audio | Chrome's Web Speech API sends speech to Google for recognition. This happens in the browser, before the app sees any text. |
+| Anthropic | Every turn, the full conversation history, and every tool result | The Claude API call in `app/receptionist.py` |
+| ElevenLabs | The text of each agent reply | `app/voice.py`, only when ElevenLabs keys are set |
 
-The agent is instructed to confirm a message with "I've got that" rather
-than reading a caller's name back in the synthesised reply, so names reach
-the speech API less often than they otherwise would.
+The system prompt tells the agent to "read the details back to the caller
+once before saving" a message. So the reply sent to ElevenLabs includes the
+caller's name and callback number.
 
 ## Retention
 
-| Data | Kept for | Then |
-| --- | --- | --- |
-| Messages | 90 days | Deleted |
-| Call log transcripts | 30 days | Deleted |
-| Aggregate topic counts | Indefinitely | No personal data retained |
-| Cached audio | Until manually cleared | Contains no caller speech |
+**Nothing is deleted automatically.** No code removes old messages, old
+transcripts or cached audio. The database persists until someone deletes it
+by hand:
 
-Run `python -m data.prune` to apply these. <!-- TODO: write this script -->
+    rm data/frontdesk.db        # or the file DB_PATH points to
+    rm -rf audio_cache/         # cached speech
+    python -m data.seed         # recreate an empty database
+
+Re-running `python -m data.seed` on its own also wipes everything. It drops
+and recreates every table, including `messages` and `call_log`.
+
+Data already sent to Google, Anthropic or ElevenLabs is kept under their
+own retention policies, which this project doesn't control.
 
 ## Who can see it
 
-Only whoever runs this prototype. In a real deployment this section would
-name the roles with access to the message queue and the call log, and they
-would not be the same people.
+Whoever runs the demo, and anyone who can reach the server. `/admin` and the
+`/api/admin/*` endpoints have no authentication. They are protected only by
+uvicorn listening on localhost by default.
 
 ## If this were real
 
-Three things this prototype does not do, which a production version would
-need:
+This is fictional demo data. Real caller data would need retention
+**enforced in code**, as a scheduled job that actually deletes records,
+not described in a document. It would also need:
 
-1. A recorded consent line at the start of the call, and a way to decline.
-2. Encryption at rest, and access logging on the message store.
+1. A spoken notice at the start of the call, and a way to decline.
+2. Authentication on the admin page, encryption at rest, and access logging.
 3. A documented process for a caller asking what is held about them.
