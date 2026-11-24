@@ -31,10 +31,12 @@ message when it cannot, and hands anything serious to a person.
 
 ## Collected personal information
 
-Name, callback number, which centre, and the reason for calling. Nothing
-else. No date of birth, no address, no payment details, no information
-about a child. This limit is enforced in the system prompt and documented
-in retention.md.
+The agent asks for a name, callback number, which centre, and the reason
+for calling. Nothing else. No date of birth, no address, no payment
+details, no information about a child. The system prompt enforces what the
+agent asks for, not what is stored: log_turn keeps the full transcript and
+reply of every turn verbatim, so anything a caller volunteers is stored.
+Documented in retention.md.
 
 ## Stack
 
@@ -50,6 +52,7 @@ Voice output: ElevenLabs, Flash/Turbo model, cached to disk by text hash.
     app/voice.py         ElevenLabs, with fallback to None
     app/db.py            connection and queries
     app/config.py        environment loading, single source
+    app/cli.py           terminal harness for the receptionist, no mic
     app/prompts/system.md
     data/schema.sql
     data/seed.py
@@ -59,7 +62,7 @@ Voice output: ElevenLabs, Flash/Turbo model, cached to disk by text hash.
 
 ## The five tools
 
-    find_centre(query)
+    find_centre(query, purpose)
     get_opening_hours(centre_id, facility, day)
     get_program_info(program, centre_id)
     take_message(name, phone, centre_id, topic, message)
